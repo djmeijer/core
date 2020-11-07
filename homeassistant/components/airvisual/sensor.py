@@ -41,9 +41,13 @@ ATTR_REGION = "region"
 SENSOR_KIND_LEVEL = "air_pollution_level"
 SENSOR_KIND_AQI = "air_quality_index"
 SENSOR_KIND_POLLUTANT = "main_pollutant"
-SENSOR_KIND_BATTERY_LEVEL = "battery_level"
-SENSOR_KIND_HUMIDITY = "humidity"
+
+SENSOR_KIND_CO2 = "co2"
+SENSOR_KIND_PARTICULATE_MATTER_2_5 = "pm_2_5"
+SENSOR_KIND_AQI_US = "air_quality_index_us"
 SENSOR_KIND_TEMPERATURE = "temperature"
+SENSOR_KIND_HUMIDITY = "humidity"
+SENSOR_KIND_BATTERY_LEVEL = "battery_level"
 
 GEOGRAPHY_SENSORS = [
     (SENSOR_KIND_LEVEL, "Air Pollution Level", "mdi:gauge", None),
@@ -53,9 +57,30 @@ GEOGRAPHY_SENSORS = [
 GEOGRAPHY_SENSOR_LOCALES = {"cn": "Chinese", "us": "U.S."}
 
 NODE_PRO_SENSORS = [
-    (SENSOR_KIND_BATTERY_LEVEL, "Battery", DEVICE_CLASS_BATTERY, PERCENTAGE),
-    (SENSOR_KIND_HUMIDITY, "Humidity", DEVICE_CLASS_HUMIDITY, PERCENTAGE),
-    (SENSOR_KIND_TEMPERATURE, "Temperature", DEVICE_CLASS_TEMPERATURE, TEMP_CELSIUS),
+    (SENSOR_KIND_CO2, "CO₂", None, CONCENTRATION_PARTS_PER_MILLION, "mdi:molecule-co2"),
+    (
+        SENSOR_KIND_PARTICULATE_MATTER_2_5,
+        "Particulate matter (2,5 μm)",
+        None,
+        CONCENTRATION_MICROGRAMS_PER_CUBIC_METER,
+        "mdi:atom",
+    ),
+    (SENSOR_KIND_AQI_US, "Air Quality Index (US)", None, None, None),
+    (
+        SENSOR_KIND_TEMPERATURE,
+        "Temperature",
+        DEVICE_CLASS_TEMPERATURE,
+        TEMP_CELSIUS,
+        None,
+    ),
+    (SENSOR_KIND_HUMIDITY, "Humidity", DEVICE_CLASS_HUMIDITY, PERCENTAGE, None),
+    (
+        SENSOR_KIND_BATTERY_LEVEL,
+        "Battery level",
+        DEVICE_CLASS_BATTERY,
+        PERCENTAGE,
+        None,
+    ),
 ]
 
 POLLUTANT_LEVEL_MAPPING = [
@@ -107,8 +132,8 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         ]
     else:
         sensors = [
-            AirVisualNodeProSensor(coordinator, kind, name, device_class, unit)
-            for kind, name, device_class, unit in NODE_PRO_SENSORS
+            AirVisualNodeProSensor(coordinator, kind, name, device_class, unit, icon)
+            for kind, name, device_class, unit, icon in NODE_PRO_SENSORS
         ]
 
     async_add_entities(sensors, True)
@@ -206,7 +231,7 @@ class AirVisualGeographySensor(AirVisualEntity):
 class AirVisualNodeProSensor(AirVisualEntity):
     """Define an AirVisual sensor related to a Node/Pro unit."""
 
-    def __init__(self, coordinator, kind, name, device_class, unit):
+    def __init__(self, coordinator, kind, name, device_class, unit, icon):
         """Initialize."""
         super().__init__(coordinator)
 
@@ -215,6 +240,7 @@ class AirVisualNodeProSensor(AirVisualEntity):
         self._name = name
         self._state = None
         self._unit = unit
+        self._icon = icon
 
     @property
     def device_class(self):
@@ -254,9 +280,22 @@ class AirVisualNodeProSensor(AirVisualEntity):
     @callback
     def update_from_latest_data(self):
         """Update the entity from the latest data."""
-        if self._kind == SENSOR_KIND_BATTERY_LEVEL:
-            self._state = self.coordinator.data["status"]["battery"]
-        elif self._kind == SENSOR_KIND_HUMIDITY:
-            self._state = self.coordinator.data["measurements"].get("humidity")
+        if self._kind == SENSOR_KIND_CO2:
+            self._state = self.coordinator.data["measurements"]["co2"]
+        elif self._kind == SENSOR_KIND_PARTICULATE_MATTER_2_5:
+            self._state = self.coordinator.data["measurements"].get("pm2_5")
+        elif self._kind == SENSOR_KIND_AQI_US:
+            aqi_us = int(self.coordinator.data["measurements"].get("aqi_us"))
+            self._state = aqi_us
+            [level] = [
+                i
+                for i in POLLUTANT_LEVEL_MAPPING
+                if i["minimum"] <= aqi_us <= i["maximum"]
+            ]
+            self._icon = level["icon"]
         elif self._kind == SENSOR_KIND_TEMPERATURE:
             self._state = self.coordinator.data["measurements"].get("temperature_C")
+        elif self._kind == SENSOR_KIND_HUMIDITY:
+            self._state = self.coordinator.data["measurements"].get("humidity")
+        elif self._kind == SENSOR_KIND_BATTERY_LEVEL:
+            self._state = self.coordinator.data["status"]["battery"]
